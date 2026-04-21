@@ -11,7 +11,4 @@ tsconfig.tsbuildinfo
 *.log
 .DS_Store
 
-# Demo artifacts
-/screenshots/
-
 /prisma/migrations/**/migration.sql.bak
