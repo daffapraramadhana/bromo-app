@@ -1,0 +1,260 @@
+// Bromo-app — Explorin.co.id jeep tour platform
+// Postgres + Prisma. Field naming mirrors the Excalidraw spec
+// (Bahasa Indonesia domain terms) while Prisma metadata stays English.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum TipePemilik {
+  individu
+  perusahaan
+}
+
+enum JenisSim {
+  A
+  B1
+  B2
+  C
+}
+
+enum TipeDriver {
+  internal
+  freelance
+}
+
+enum StatusDriver {
+  tersedia
+  bertugas
+  cuti
+  nonaktif
+}
+
+enum StatusMobil {
+  tersedia
+  disewa
+  maintenance
+}
+
+enum Role {
+  SUPER_ADMIN // Platform (MKW)
+  MANAGER     // Per-merchant, approves data
+  ADMIN       // Per-merchant, inputs data
+  OPERATOR    // Rest-area ticket redemption
+}
+
+enum ApprovalStatus {
+  draft
+  pending_approval
+  approved
+  rejected
+}
+
+enum ApprovableType {
+  pemilik
+  driver
+  mobil
+  merchant
+}
+
+enum ApprovalAction {
+  submitted
+  approved
+  rejected
+  reverted
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy + auth
+// ---------------------------------------------------------------------------
+
+model Merchant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  status    ApprovalStatus @default(pending_approval)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  pemiliks Pemilik[]
+  drivers  Driver[]
+  mobils   Mobil[]
+  logs     ApprovalLog[]
+
+  @@map("merchant")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         Role
+  merchantId   String?  // null for SUPER_ADMIN
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  merchant     Merchant?     @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  approvalLogs ApprovalLog[] @relation("ActorLogs")
+
+  @@index([merchantId])
+  @@map("user")
+}
+
+// ---------------------------------------------------------------------------
+// Domain
+// ---------------------------------------------------------------------------
+
+model Pemilik {
+  idPemilik   Int         @id @default(autoincrement()) @map("id_pemilik")
+  merchantId  String      @map("merchant_id")
+  nama        String
+  tipePemilik TipePemilik @map("tipe_pemilik")
+
+  // Identitas
+  nik             String? @unique
+  npwp            String? @unique
+  namaPerusahaan  String? @map("nama_perusahaan")
+
+  // Kontak
+  noHp  String? @map("no_hp")
+  email String?
+
+  // Alamat
+  alamat    String?
+  kota      String?
+  provinsi  String?
+  kodePos   String? @map("kode_pos")
+
+  // Legal & administrasi
+  nomorRekening        String? @map("nomor_rekening")
+  namaBank             String? @map("nama_bank")
+  namaPemilikRekening  String? @map("nama_pemilik_rekening")
+
+  // Lifecycle
+  statusAktif     Boolean  @default(true) @map("status_aktif")
+  tanggalBergabung DateTime? @map("tanggal_bergabung")
+  tanggalNonaktif  DateTime? @map("tanggal_nonaktif")
+
+  catatan   String?
+  status    ApprovalStatus @default(draft)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  mobils   Mobil[]
+
+  @@index([merchantId])
+  @@index([status])
+  @@map("pemilik")
+}
+
+model Driver {
+  idDriver   Int    @id @default(autoincrement()) @map("id_driver")
+  merchantId String @map("merchant_id")
+  nama       String
+  nik        String @unique
+  noSim      String @unique @map("no_sim")
+  jenisSim   JenisSim @map("jenis_sim")
+  masaBerlakuSim DateTime @map("masa_berlaku_sim")
+
+  tempatLahir   String?   @map("tempat_lahir")
+  tanggalLahir  DateTime? @map("tanggal_lahir")
+  alamat        String?
+
+  noHp  String? @map("no_hp")
+  email String?
+
+  tipeDriver   TipeDriver   @default(internal) @map("tipe_driver")
+  statusDriver StatusDriver @default(tersedia) @map("status_driver")
+
+  tanggalBergabung DateTime? @map("tanggal_bergabung")
+  tanggalKeluar    DateTime? @map("tanggal_keluar")
+  tarifHarian      Decimal?  @db.Decimal(12, 2) @map("tarif_harian")
+
+  namaKontakDarurat String? @map("nama_kontak_darurat")
+  noHpDarurat       String? @map("no_hp_darurat")
+
+  catatan   String?
+  status    ApprovalStatus @default(draft)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId])
+  @@index([status])
+  @@index([masaBerlakuSim])
+  @@map("driver")
+}
+
+model Mobil {
+  idMobil    Int    @id @default(autoincrement()) @map("id_mobil")
+  merchantId String @map("merchant_id")
+  idPemilik  Int    @map("id_pemilik")
+
+  merk String
+  tipe String
+
+  tahunPembuatan  Int  @map("tahun_pembuatan")
+  tahunKendaraan  Int? @map("tahun_kendaraan")
+
+  noPolisi String @unique @map("no_polisi")
+  noRangka String @unique @map("no_rangka")
+  noMesin  String @unique @map("no_mesin")
+
+  warna     String?
+  kapasitas Int?
+
+  masaBerlakuPajak DateTime? @map("masa_berlaku_pajak")
+  hargaSewaHarian  Decimal?  @db.Decimal(12, 2) @map("harga_sewa_harian")
+
+  statusMobil StatusMobil    @default(tersedia) @map("status_mobil")
+  status      ApprovalStatus @default(draft)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  pemilik  Pemilik  @relation(fields: [idPemilik], references: [idPemilik], onDelete: Restrict)
+
+  @@index([merchantId])
+  @@index([idPemilik])
+  @@index([status])
+  @@index([masaBerlakuPajak])
+  @@map("mobil")
+}
+
+// ---------------------------------------------------------------------------
+// Approval audit trail (append-only)
+// ---------------------------------------------------------------------------
+
+model ApprovalLog {
+  id             String          @id @default(cuid())
+  merchantId     String          @map("merchant_id")
+  approvableType ApprovableType  @map("approvable_type")
+  approvableId   String          @map("approvable_id") // stringified PK
+  action         ApprovalAction
+  fromStatus     ApprovalStatus? @map("from_status")
+  toStatus       ApprovalStatus  @map("to_status")
+  actorId        String          @map("actor_id")
+  note           String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  actor    User     @relation("ActorLogs", fields: [actorId], references: [id])
+
+  @@index([merchantId, approvableType, approvableId])
+  @@index([createdAt])
+  @@map("approval_log")
+}
