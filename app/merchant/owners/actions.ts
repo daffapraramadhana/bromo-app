@@ -7,6 +7,11 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { assertCan } from "@/lib/rbac";
+import {
+  ActionState,
+  fail,
+  prismaErrorToFieldErrors,
+} from "@/lib/form-state";
 
 const optionalString = z
   .string()
@@ -31,16 +36,14 @@ const optionalInt = z
   .optional()
   .transform((v) => (v && v.trim().length > 0 ? Number(v) : undefined));
 
-const requiredInt = z.coerce.number().int();
-
 const vehicleSchema = z.object({
-  merk: z.string().trim().min(1, "Merk wajib diisi"),
-  tipe: z.string().trim().min(1, "Tipe wajib diisi"),
-  tahunPembuatan: requiredInt,
+  merk: z.string().trim().min(1, "Wajib diisi"),
+  tipe: z.string().trim().min(1, "Wajib diisi"),
+  tahunPembuatan: z.coerce.number({ invalid_type_error: "Wajib diisi" }).int(),
   tahunKendaraan: optionalInt,
-  noPolisi: z.string().trim().min(1, "No. polisi wajib diisi"),
-  noRangka: z.string().trim().min(1, "No. rangka wajib diisi"),
-  noMesin: z.string().trim().min(1, "No. mesin wajib diisi"),
+  noPolisi: z.string().trim().min(1, "Wajib diisi"),
+  noRangka: z.string().trim().min(1, "Wajib diisi"),
+  noMesin: z.string().trim().min(1, "Wajib diisi"),
   warna: optionalString,
   kapasitas: optionalInt,
   masaBerlakuPajak: optionalDate,
@@ -48,7 +51,7 @@ const vehicleSchema = z.object({
 });
 
 const ownerSchema = z.object({
-  nama: z.string().trim().min(1, "Nama wajib diisi"),
+  nama: z.string().trim().min(1, "Wajib diisi"),
   tipePemilik: z.enum(["individu", "perusahaan"]),
   nik: optionalString,
   npwp: optionalString,
@@ -72,7 +75,6 @@ const ownerSchema = z.object({
 });
 
 function collectVehicles(formData: FormData) {
-  // Fields are named vehicle[i][field]. Group them by i.
   const buckets = new Map<string, Record<string, string>>();
   for (const [key, value] of formData.entries()) {
     const m = key.match(/^vehicle\[(\d+)\]\[([a-zA-Z_]+)\]$/);
@@ -81,83 +83,115 @@ function collectVehicles(formData: FormData) {
     if (!buckets.has(idx)) buckets.set(idx, {});
     buckets.get(idx)![field] = String(value);
   }
-  const items = [...buckets.entries()]
+  return [...buckets.entries()]
     .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([, obj]) => obj);
-  // Drop rows that are completely empty.
-  return items.filter((r) =>
-    ["merk", "tipe", "noPolisi", "noRangka", "noMesin"].some(
-      (k) => r[k] && r[k].trim().length > 0,
-    ),
+    .map(([idx, obj]) => ({ idx: Number(idx), obj }))
+    .filter(({ obj }) =>
+      ["merk", "tipe", "noPolisi", "noRangka", "noMesin"].some(
+        (k) => obj[k] && obj[k].trim().length > 0,
+      ),
+    );
+}
+
+function ownerFormEntries(formData: FormData) {
+  return Object.fromEntries(
+    [...formData.entries()].filter(([k]) => !k.startsWith("vehicle[")),
   );
 }
 
-export async function createOwnerWithVehicles(formData: FormData) {
+export async function createOwner(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const session = await auth();
   if (!session?.user.merchantId) throw new Error("Not signed in");
   assertCan(session.user.role, "data:input");
 
-  const ownerInput = ownerSchema.parse(Object.fromEntries(
-    [...formData.entries()].filter(([k]) => !k.startsWith("vehicle[")),
-  ));
-  const vehicleInputs = collectVehicles(formData).map((row) =>
-    vehicleSchema.parse(row),
-  );
+  const ownerParse = ownerSchema.safeParse(ownerFormEntries(formData));
+  if (!ownerParse.success) {
+    return fail(ownerParse.error.flatten().fieldErrors);
+  }
 
-  const pemilik = await db.$transaction(async (tx) => {
-    const created = await tx.pemilik.create({
-      data: {
-        merchantId: session.user.merchantId!,
-        ...ownerInput,
-        status: "draft",
-      },
-    });
-    if (vehicleInputs.length > 0) {
-      await tx.mobil.createMany({
-        data: vehicleInputs.map((v) => ({
-          merchantId: session.user.merchantId!,
-          idPemilik: created.idPemilik,
-          ...v,
-          status: "draft",
-        })),
-      });
+  const errors: Record<string, string[]> = {};
+  const validVehicles: z.infer<typeof vehicleSchema>[] = [];
+  for (const { idx, obj } of collectVehicles(formData)) {
+    const r = vehicleSchema.safeParse(obj);
+    if (!r.success) {
+      for (const [field, msgs] of Object.entries(r.error.flatten().fieldErrors)) {
+        if (msgs) errors[`vehicle[${idx}][${field}]`] = msgs;
+      }
+    } else {
+      validVehicles.push(r.data);
     }
-    return created;
-  });
+  }
+  if (Object.keys(errors).length > 0) return fail(errors);
+
+  let createdId: number;
+  try {
+    const created = await db.$transaction(async (tx) => {
+      const p = await tx.pemilik.create({
+        data: {
+          merchantId: session.user.merchantId!,
+          ...ownerParse.data,
+          status: "draft",
+        },
+      });
+      if (validVehicles.length > 0) {
+        await tx.mobil.createMany({
+          data: validVehicles.map((v) => ({
+            merchantId: session.user.merchantId!,
+            idPemilik: p.idPemilik,
+            ...v,
+            status: "draft",
+          })),
+        });
+      }
+      return p;
+    });
+    createdId = created.idPemilik;
+  } catch (err) {
+    const fieldErrs = prismaErrorToFieldErrors(err);
+    if (fieldErrs) return fail(fieldErrs);
+    throw err;
+  }
 
   revalidatePath("/owners");
   revalidatePath("/vehicles");
-  redirect(`/owners/${pemilik.idPemilik}`);
+  redirect(`/owners/${createdId}`);
 }
 
-export async function addVehicleToOwner(formData: FormData) {
+export async function updateOwner(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const session = await auth();
   if (!session?.user.merchantId) throw new Error("Not signed in");
   assertCan(session.user.role, "data:input");
 
-  const idPemilik = z.coerce.number().int().parse(formData.get("idPemilik"));
-  const input = vehicleSchema.parse(
-    Object.fromEntries(
-      [...formData.entries()].filter(([k]) => k !== "idPemilik"),
-    ),
-  );
+  const idPemilik = z.coerce.number().int().positive().parse(formData.get("idPemilik"));
 
-  // Cross-tenant guard.
+  const ownerParse = ownerSchema.safeParse(ownerFormEntries(formData));
+  if (!ownerParse.success) {
+    return fail(ownerParse.error.flatten().fieldErrors);
+  }
+
   const owner = await db.pemilik.findUnique({ where: { idPemilik } });
   if (!owner || owner.merchantId !== session.user.merchantId) {
     throw new Error("Owner not found");
   }
 
-  const created = await db.mobil.create({
-    data: {
-      merchantId: session.user.merchantId,
-      idPemilik,
-      ...input,
-      status: "draft",
-    },
-  });
+  try {
+    await db.pemilik.update({
+      where: { idPemilik },
+      data: ownerParse.data,
+    });
+  } catch (err) {
+    const fieldErrs = prismaErrorToFieldErrors(err);
+    if (fieldErrs) return fail(fieldErrs);
+    throw err;
+  }
 
   revalidatePath(`/owners/${idPemilik}`);
-  revalidatePath("/vehicles");
-  redirect(`/vehicles/${created.idMobil}`);
+  revalidatePath("/owners");
+  redirect(`/owners/${idPemilik}`);
 }

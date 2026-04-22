@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { Timeline } from "@/components/timeline";
 import { ApprovalActions } from "@/components/approval-actions";
+import { can } from "@/lib/rbac";
 import { formatDate, formatIDR } from "@/lib/utils";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -50,12 +52,19 @@ export default async function DriverDetailPage({
             <span>SIM {driver.jenisSim} · {driver.tipeDriver}</span>
           </div>
         </div>
-        <ApprovalActions
-          type="driver"
-          id={idDriver}
-          status={driver.status}
-          role={session!.user.role}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {can(session!.user.role, "data:input") && (
+            <Link href={`/drivers/${idDriver}/edit`}>
+              <Button size="sm" variant="outline">Edit</Button>
+            </Link>
+          )}
+          <ApprovalActions
+            type="driver"
+            id={idDriver}
+            status={driver.status}
+            role={session!.user.role}
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

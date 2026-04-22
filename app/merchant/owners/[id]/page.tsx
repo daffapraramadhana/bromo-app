@@ -8,6 +8,7 @@ import { Table, TBody, THead, Th, Tr, Td } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { Timeline } from "@/components/timeline";
 import { ApprovalActions } from "@/components/approval-actions";
+import { can } from "@/lib/rbac";
 import { formatDate } from "@/lib/utils";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -57,12 +58,19 @@ export default async function OwnerDetailPage({
             </span>
           </div>
         </div>
-        <ApprovalActions
-          type="pemilik"
-          id={idPemilik}
-          status={pemilik.status}
-          role={session!.user.role}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {can(session!.user.role, "data:input") && (
+            <Link href={`/owners/${idPemilik}/edit`}>
+              <Button size="sm" variant="outline">Edit</Button>
+            </Link>
+          )}
+          <ApprovalActions
+            type="pemilik"
+            id={idPemilik}
+            status={pemilik.status}
+            role={session!.user.role}
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
