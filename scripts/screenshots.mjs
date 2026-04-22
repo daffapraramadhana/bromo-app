@@ -6,21 +6,28 @@ const ROOT_BASE = "http://localhost:3000";
 const MERCHANT_BASE = "http://merchant.localhost:3000";
 const OUT = "screenshots";
 
-// [filename, path, base, role]
 const PAGES = [
-  ["01-login.png",                    "/login",     ROOT_BASE,     null],
+  ["01-login.png",                    "/login",       ROOT_BASE,     null],
 
-  ["10-merchant-dashboard.png",       "/",          MERCHANT_BASE, "manager"],
-  ["11-merchant-approvals.png",       "/approvals", MERCHANT_BASE, "manager"],
-  ["12-merchant-owners.png",          "/owners",    MERCHANT_BASE, "manager"],
-  ["13-merchant-vehicles.png",        "/vehicles",  MERCHANT_BASE, "manager"],
-  ["14-merchant-drivers.png",         "/drivers",   MERCHANT_BASE, "manager"],
-  ["15-merchant-users.png",           "/users",     MERCHANT_BASE, "manager"],
+  ["10-merchant-dashboard.png",       "/",            MERCHANT_BASE, "manager"],
+  ["11-merchant-approvals.png",       "/approvals",   MERCHANT_BASE, "manager"],
+  ["12-merchant-owners.png",          "/owners",      MERCHANT_BASE, "manager"],
+  ["13-merchant-vehicles.png",        "/vehicles",    MERCHANT_BASE, "manager"],
+  ["14-merchant-drivers.png",         "/drivers",     MERCHANT_BASE, "manager"],
+  ["15-merchant-users.png",           "/users",       MERCHANT_BASE, "manager"],
 
-  ["20-merchant-approvals-admin.png", "/approvals", MERCHANT_BASE, "admin"],
+  // New pages
+  ["40-owner-new.png",                "/owners/new",  MERCHANT_BASE, "admin"],
+  ["41-owner-detail.png",             "/owners/1",    MERCHANT_BASE, "manager"],
+  ["42-driver-new.png",               "/drivers/new", MERCHANT_BASE, "admin"],
+  ["43-driver-detail.png",            "/drivers/1",   MERCHANT_BASE, "manager"],
+  ["44-vehicle-new.png",              "/vehicles/new", MERCHANT_BASE, "admin"],
+  ["45-vehicle-detail.png",           "/vehicles/1",  MERCHANT_BASE, "manager"],
 
-  ["30-admin-dashboard.png",          "/",          ROOT_BASE,     "superadmin"],
-  ["31-admin-merchants.png",          "/merchants", ROOT_BASE,     "superadmin"],
+  ["20-merchant-approvals-admin.png", "/approvals",   MERCHANT_BASE, "admin"],
+
+  ["30-admin-dashboard.png",          "/",            ROOT_BASE,     "superadmin"],
+  ["31-admin-merchants.png",          "/merchants",   ROOT_BASE,     "superadmin"],
 ];
 
 async function login(browser, email) {
@@ -78,7 +85,6 @@ async function main() {
 
     await clearAuthCookies(browser);
     if (role) {
-      // Set the cookie for both hostnames so either base works.
       await setSessionForHost(browser, tokens[role], "localhost");
       await setSessionForHost(browser, tokens[role], "merchant.localhost");
     }
@@ -86,7 +92,7 @@ async function main() {
     try {
       await page.goto(`${base}${pathname}`, {
         waitUntil: "networkidle0",
-        timeout: 30000,
+        timeout: 60000,
       });
       await page.screenshot({ path: path.join(OUT, file), fullPage: true });
       console.log(`  ${file}  (${base}${pathname})`);

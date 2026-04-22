@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Table, TBody, THead, Th, Tr, Td } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
@@ -18,7 +20,12 @@ export default async function DriversPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Driver</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Driver</h1>
+        <Link href="/drivers/new">
+          <Button>+ Driver Baru</Button>
+        </Link>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle className="text-base text-foreground">
@@ -40,26 +47,27 @@ export default async function DriversPage() {
             <TBody>
               {drivers.map((d) => (
                 <Tr key={d.idDriver}>
-                  <Td className="font-medium">{d.nama}</Td>
+                  <Td className="font-medium">
+                    <Link href={`/drivers/${d.idDriver}`} className="hover:underline">
+                      {d.nama}
+                    </Link>
+                  </Td>
                   <Td className="font-mono text-xs">
                     {d.jenisSim} · {d.noSim}
                   </Td>
                   <Td className="text-muted-foreground">{d.tipeDriver}</Td>
-                  <Td>
-                    <Badge variant="outline">{d.statusDriver}</Badge>
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {formatDate(d.masaBerlakuSim)}
-                  </Td>
-                  <Td>
-                    <StatusBadge status={d.status} />
-                  </Td>
+                  <Td><Badge variant="outline">{d.statusDriver}</Badge></Td>
+                  <Td className="text-muted-foreground">{formatDate(d.masaBerlakuSim)}</Td>
+                  <Td><StatusBadge status={d.status} /></Td>
                 </Tr>
               ))}
               {drivers.length === 0 && (
                 <Tr>
-                  <Td colSpan={6} className="text-center text-muted-foreground py-8">
-                    Belum ada driver terdaftar.
+                  <Td colSpan={6} className="text-center text-muted-foreground py-10">
+                    Belum ada driver terdaftar.{" "}
+                    <Link href="/drivers/new" className="text-primary hover:underline">
+                      Tambahkan driver →
+                    </Link>
                   </Td>
                 </Tr>
               )}

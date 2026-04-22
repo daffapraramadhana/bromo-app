@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Table, TBody, THead, Th, Tr, Td } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
@@ -21,13 +23,19 @@ export default async function OwnersPage({
         ? { status: status as "draft" | "pending_approval" | "approved" | "rejected" }
         : {}),
     },
+    include: { _count: { select: { mobils: true } } },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Pemilik</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Pemilik</h1>
+        <Link href="/owners/new">
+          <Button>+ Pemilik Baru</Button>
+        </Link>
+      </div>
 
       <Card>
         <CardHeader>
@@ -42,6 +50,7 @@ export default async function OwnersPage({
                 <Th>Nama</Th>
                 <Th>Tipe</Th>
                 <Th>Kontak</Th>
+                <Th>Kendaraan</Th>
                 <Th>Bergabung</Th>
                 <Th>Status</Th>
               </Tr>
@@ -49,21 +58,25 @@ export default async function OwnersPage({
             <TBody>
               {pemiliks.map((p) => (
                 <Tr key={p.idPemilik}>
-                  <Td className="font-medium">{p.nama}</Td>
+                  <Td className="font-medium">
+                    <Link href={`/owners/${p.idPemilik}`} className="hover:underline">
+                      {p.nama}
+                    </Link>
+                  </Td>
                   <Td className="text-muted-foreground">{p.tipePemilik}</Td>
                   <Td className="text-muted-foreground">{p.noHp ?? "—"}</Td>
-                  <Td className="text-muted-foreground">
-                    {formatDate(p.tanggalBergabung)}
-                  </Td>
-                  <Td>
-                    <StatusBadge status={p.status} />
-                  </Td>
+                  <Td className="tabular-nums">{p._count.mobils}</Td>
+                  <Td className="text-muted-foreground">{formatDate(p.tanggalBergabung)}</Td>
+                  <Td><StatusBadge status={p.status} /></Td>
                 </Tr>
               ))}
               {pemiliks.length === 0 && (
                 <Tr>
-                  <Td colSpan={5} className="text-center text-muted-foreground py-8">
-                    Belum ada pemilik terdaftar.
+                  <Td colSpan={6} className="text-center text-muted-foreground py-10">
+                    Belum ada pemilik terdaftar.{" "}
+                    <Link href="/owners/new" className="text-primary hover:underline">
+                      Tambahkan pemilik pertama →
+                    </Link>
                   </Td>
                 </Tr>
               )}
